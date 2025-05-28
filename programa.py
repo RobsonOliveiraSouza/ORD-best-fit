@@ -1,6 +1,91 @@
 import sys
 import io
 
+IMPRIME_LED = True
+
+
+"""
+    OPERAÇÕES LED
+"""
+def ler_cabecalho_led(arq):
+    arq.seek(0)
+    ledCabecalho = arq.read(2)
+    led = int.from_bytes(ledCabecalho, byteorder='big', signed=True)
+    return led if led != 0 else -1
+
+def escrever_cabecalho_led(arq, offset_novo_registro):
+    arq.seek(0)
+    arq.write(offset_novo_registro.to_bytes(2, byteorder='big', signed=True))
+
+def reordenar_led_by_registro_deletado(led, arq, tamanho_novo_registro, offset_novo_registro):
+    CABECA_LED = -1
+
+    # Define a posição em que o registro que foi deletado vai ficar na led, visto que ela sempre deve estar ordenada
+    (offset_anterior, offset_atual) = definir_posicao_offset_registro_led(arq, led, tamanho_novo_registro)
+
+    if offset_anterior == CABECA_LED:
+        # Quando o registro deletado atual fica no final da LED
+        """
+                                                vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+            [ tam:xxx | ... | prox_offset]--->[*registro deletado atual*| ... | prox_offset]-------> [CABEÇA LED]
+        """
+        escrever_cabecalho_led(arq, offset_novo_registro)
+
+    else:
+        # Quando o registro deletado atual fica entre 2 elementos da LED
+        """
+                                                      vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+            [ tam:xxx | ... | prox_offset]--->[*registro deletado atual*| ... | prox_offset]------->[ tam:xxy | ... | prox_offset]-------->...
+        """
+        adicionar_novo_elemento_led(arq, offset_anterior=offset_anterior, aponta_para=offset_novo_registro)
+
+    # Faz o novo registro deletado apontar para o proximo offset
+    adicionar_novo_elemento_led(arq, offset_anterior=offset_novo_registro, aponta_para=offset_atual)
+
+def definir_posicao_offset_registro_led(arq, led, tamanho_novo_registro) -> tuple[int, int]:
+    CABECA_LED = -1
+    offset_anterior = -1
+    offset_atual = led
+
+    while offset_atual != CABECA_LED:
+        (tamanho_registro_atual, proximo_offset) = ler_informacoes_registro_led(arq, offset_atual)
+
+        print(f'[current_offset: {offset_atual}|next_offset: {proximo_offset}]--->{"*FIM*" if proximo_offset == CABECA_LED else ""}', end="")
+
+        if tamanho_novo_registro <= tamanho_registro_atual:  # Coloca entre 2 registros
+            break
+
+        offset_anterior = offset_atual
+        offset_atual = proximo_offset
+
+    print("");
+
+    return offset_anterior, offset_atual
+
+def adicionar_novo_elemento_led(arq, offset_anterior, aponta_para):
+    # Insere novo elemento no elemento anterior da led 
+    arq.seek(offset_anterior + 3) # Desloca dos 2 bytes do registro + '*'
+    arq.write(aponta_para.to_bytes(4, byteorder='big', signed=True))
+
+def ler_informacoes_registro_led(arq, offset_atual) -> tuple[int, int]:
+    arq.seek(offset_atual)
+    atualEspacoTam = int.from_bytes(arq.read(2), byteorder='big')
+    arq.read(1) #pula o "*"
+    proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
+    return atualEspacoTam, proxOffset
+
+"""
+    OPERAÇÕES REGISTRO
+"""
+def marcar_registro_como_removido(offset, tamanho_registro, chave, arq) -> None:
+    arq.read(tamanho_registro)
+    print(f'Remoção do registro de chave "{chave}"')
+    arq.seek(offset + 2)
+    arq.write(b'*')
+
+"""
+    OPERAÇÕES ARQUIVO
+"""
 def leia_reg(arq) -> tuple[str, int]:
     try:
         tam_bytes = arq.read(2)
@@ -140,7 +225,7 @@ def insere(registro):
                     offsetInsercao = offsetAtual + tamRegistro + 2
                 else:
                     offsetAnterior = offsetAtual
-                    offsetAtual = proxOffset
+                    offsetAtual = proximo_offset 
             if encontrado:
                 if sobra > 10:
                     print(f"Tamanho do espaço reutilizado: {espaco} bytes (Sobra de {sobra} bytes)")
@@ -162,50 +247,31 @@ def insere(registro):
 def remove(chave):
     try:
         offset = busca(chave, imprimir=False)
+        CABECA_LED = -1
         if offset == -1:
             print(f'Remoção do registro de chave "{chave}"')
             print('Erro: registro não encontrado!\n')
             return
         with open("filmes.dat", 'r+b') as arq:
-            arq.seek(0)
-            ledCabecalho = arq.read(4)
-            led = int.from_bytes(ledCabecalho, byteorder='big', signed=True)
+            led = ler_cabecalho_led(arq)
+            print(f'Valor cabeçalho led: {led}')
+
             arq.seek(offset)
             tamBytes = arq.read(2)
             if tamBytes:
-                tam = int.from_bytes(tamBytes, byteorder='big')
-                arq.read(tam)
-                print(f'Remoção do registro de chave "{chave}"')
-                arq.seek(offset + 2)
-                arq.write(b'*')
-                novoEspacoTam = tam
-                novoEspacoOffset = offset
-                if led == -1:
-                    arq.seek(0)
-                    arq.write(novoEspacoOffset.to_bytes(4, byteorder='big', signed=True))
-                    arq.seek(novoEspacoOffset + 3)
-                    arq.write((-1).to_bytes(4, byteorder='big', signed=True))
-                else:
-                    antOffset = -1
-                    atualOffset = led
-                    while atualOffset != -1:
-                        arq.seek(atualOffset)
-                        atualEspacoTam = int.from_bytes(arq.read(2), byteorder='big')
-                        arq.read(1)
-                        proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
-                        if novoEspacoTam < atualEspacoTam:  # BEST-FIT!!!
-                            break
-                        antOffset = atualOffset
-                        atualOffset = proxOffset
-                    if antOffset == -1:
-                        arq.seek(0)
-                        arq.write(novoEspacoOffset.to_bytes(4, byteorder='big', signed=True))
-                    else:
-                        arq.seek(antOffset + 3)
-                        arq.write(novoEspacoOffset.to_bytes(4, byteorder='big', signed=True))
-                    arq.seek(novoEspacoOffset + 3)
-                    arq.write(atualOffset.to_bytes(4, byteorder='big', signed=True))
-                print(f'Registro removido! ({tam} bytes)')
+                tamanho_registro = int.from_bytes(tamBytes, byteorder='big')
+                marcar_registro_como_removido(offset, tamanho_registro, chave, arq) # Coloca o '*'
+                tamanho_novo_registro_deletado = tamanho_registro
+                offset_novo_registro_deletado = offset
+
+                if led != CABECA_LED:
+                    reordenar_led_by_registro_deletado(led, arq, tamanho_novo_registro_deletado, offset_novo_registro_deletado)
+
+                if led == CABECA_LED:
+                    escrever_cabecalho_led(arq, offset_novo_registro_deletado)
+                    adicionar_novo_elemento_led(arq, offset_anterior=offset_novo_registro_deletado, aponta_para=-1)
+
+                print(f'Registro removido! ({tamanho_registro} bytes)')
                 print(f'Local: offset = {offset}\n')
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
@@ -247,3 +313,4 @@ if __name__ == "__main__":
     else:
         print("Uso: python programa.py -e operacoes.txt")
         print("Ou: python programa.py -p")
+
