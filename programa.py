@@ -3,19 +3,24 @@ import io
 
 IMPRIME_LED = True
 
+"""
+    UTILITARIOS
+"""
+def ler_tamanho_registro(arq) -> int:
+    return int.from_bytes(2, byteorder='big', signed=False)
 
 """
     OPERAÇÕES LED
 """
 def ler_cabecalho_led(arq):
     arq.seek(0)
-    ledCabecalho = arq.read(2)
+    ledCabecalho = arq.read(4)
     led = int.from_bytes(ledCabecalho, byteorder='big', signed=True)
     return led if led != 0 else -1
 
 def escrever_cabecalho_led(arq, offset_novo_registro):
     arq.seek(0)
-    arq.write(offset_novo_registro.to_bytes(2, byteorder='big', signed=True))
+    arq.write(offset_novo_registro.to_bytes(4, byteorder='big', signed=True))
 
 def reordenar_led_by_registro_deletado(led, arq, tamanho_novo_registro, offset_novo_registro):
     CABECA_LED = -1
@@ -50,7 +55,7 @@ def definir_posicao_offset_registro_led(arq, led, tamanho_novo_registro) -> tupl
     while offset_atual != CABECA_LED:
         (tamanho_registro_atual, proximo_offset) = ler_informacoes_registro_led(arq, offset_atual)
 
-        print(f'[current_offset: {offset_atual}|next_offset: {proximo_offset}]--->{"*FIM*" if proximo_offset == CABECA_LED else ""}', end="")
+        print(f'[current_offset: {offset_atual}|tam: {tamanho_registro_atual}|next_offset: {proximo_offset}]--->{"*FIM*" if proximo_offset == CABECA_LED else ""}', end="")
 
         if tamanho_novo_registro <= tamanho_registro_atual:  # Coloca entre 2 registros
             break
@@ -74,14 +79,31 @@ def ler_informacoes_registro_led(arq, offset_atual) -> tuple[int, int]:
     proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
     return atualEspacoTam, proxOffset
 
+def procurar_espaco_disponivel_led(cabeca_led: int, tamanho_registro: int, arq) -> tuple[bool, int, tuple[int, int]]: # Retorna o offset anterior, se o registro foi encontrado e o tamanho da celula
+    offset_anterior = -1
+    (offset_atual, prox_offset) = cabeca_led, -1 
+    while offset_atual != -1:
+        arq.seek(offset_atual)
+        (tamanho_celula_led, prox_offset) = ler_informacoes_registro_led(arq, offset_atual)
+        if tamanho_celula_led >= tamanho_registro:
+            return True, tamanho_celula_led, (offset_anterior, offset_atual)
+        offset_anterior = offset_atual
+        offset_atual = prox_offset
+    arq.seek(0, io.SEEK_END) # Caso não encontre espaço disponível, adicionar registro no fim do arquivo 
+    return False, -1, (offset_anterior, offset_atual)
+
+
 """
     OPERAÇÕES REGISTRO
 """
 def marcar_registro_como_removido(offset, tamanho_registro, chave, arq) -> None:
-    arq.read(tamanho_registro)
     print(f'Remoção do registro de chave "{chave}"')
     arq.seek(offset + 2)
     arq.write(b'*')
+
+def inserir_registro(tamanho_registro: int, registro: str, arq) -> None:
+    arq.write(tamanho_registro.to_bytes(2, byteorder='big', signed=False))
+    arq.write(registro.encode('utf-8'))
 
 """
     OPERAÇÕES ARQUIVO
@@ -193,56 +215,38 @@ def reinserirSobraLED(arq, sobra, offsetSobra):
 
 def insere(registro):
     try:
-        chave = registro.split('|')[0]
         with open("filmes.dat", 'r+b') as arq:
-            arq.seek(0)
-            ledCabecalho = arq.read(4)
-            led = int.from_bytes(ledCabecalho, byteorder='big', signed=True)
-            print(f'Inserção do registro de chave "{chave}" ({len(registro)} bytes)')
-            tamRegistro = len(registro)
-            encontrado = False
-            offsetAnterior = -1
-            offsetAtual = led
-            offsetInsercao = None
-            espaco = None
-            while offsetAtual != -1 and not encontrado:
-                arq.seek(offsetAtual)
-                espaco = int.from_bytes(arq.read(2), byteorder='big')
-                arq.read(1)
-                proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
-                if espaco >= tamRegistro:
-                    encontrado = True
-                    sobra = espaco - tamRegistro - 2
-                    if offsetAnterior == -1:
-                        arq.seek(0)
-                        arq.write(proxOffset.to_bytes(4, byteorder='big', signed=True))
-                    else:
-                        arq.seek(offsetAnterior + 3)
-                        arq.write(proxOffset.to_bytes(4, byteorder='big', signed=True))
-                    arq.seek(offsetAtual)
-                    arq.write(tamRegistro.to_bytes(2, byteorder='big'))
-                    arq.write(registro.encode('utf-8'))
-                    offsetInsercao = offsetAtual + tamRegistro + 2
-                else:
-                    offsetAnterior = offsetAtual
-                    offsetAtual = proximo_offset 
-            if encontrado:
-                if sobra > 10:
-                    print(f"Tamanho do espaço reutilizado: {espaco} bytes (Sobra de {sobra} bytes)")
-                    print(f"Local: offset = {offsetAtual} ({ledCabecalho})\n")
-                    reinserirSobraLED(arq, sobra, offsetInsercao)
-                else:
-                    print(f"Tamanho do espaço reutilizado: {espaco} bytes")
-                    print(f"Local: offset = {offsetAtual} ({ledCabecalho})\n")
-            else:
-                arq.seek(0, io.SEEK_END)
-                posicao = arq.tell()
-                arq.write(tamRegistro.to_bytes(2, byteorder='big'))
-                arq.write(registro.encode('utf-8'))
-                print(f'Tamanho do espaço utilizado: {tamRegistro} bytes')
-                print(f'Local: fim do arquivo (offset = {posicao})\n')
+            id_registro = registro.split('|')[0]
+            cabeca_led = ler_cabecalho_led(arq)
+            tamanho_registro = len(registro)
+            print(f'Inserindo registro {id_registro} ({tamanho_registro} bytes)')
+            #tuple[bool, int, int, int] 
+            (existe_espaco_disponivel_led, tamanho_espaco_disponivel, offsets) = procurar_espaco_disponivel_led(cabeca_led, tamanho_registro, arq)
+            if existe_espaco_disponivel_led:
+                print(f'Espaço disponível encontrado! {tamanho_espaco_disponivel}')
+                print(f'Fragmentacao: {tamanho_espaco_disponivel - tamanho_registro}')
+                inserir_em_espaco_led(registro, tamanho_espaco_disponivel, offsets, arq)
+                # Fragmentação 
+                return
+            print(f'Não foi encontrado espaço disponível na led...')
+            # Assumindo que o ponteiro do arquivo esteja no fim do arquivo:
+            inserir_registro(tamanho_registro, registro, arq)
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
+
+def inserir_em_espaco_led(registro: str, tamanho_espaco_disponivel:int, offsets: tuple[int, int], arq) -> None:
+    tamanho_registro_sem_padding = len(registro)
+    fragmentacao = tamanho_espaco_disponivel - tamanho_registro_sem_padding
+    mensagem_fragmentacao = ''
+    if fragmentacao != 0:
+        mensagem_fragmentacao = f' (+ {fragmentacao} bytes p/ evitar fragmentação)'
+        print(f'Fragmentacao encontrada: {fragmentacao} bytes')
+        registro.rjust(tamanho_espaco_disponivel, '\0')
+    inserir_registro(len(registro), registro, arq)
+    (offset_anterior, prox_offset) = offsets
+    arq.seek(offset_anterior + 3) # 2 numeros do tamanho_registro + '*'
+    arq.write(prox_offset.to_bytes(4, byteorder='big', signed=True))
+    print(f'Registro inserido! {str(tamanho_registro_sem_padding)+mensagem_fragmentacao}')
 
 def remove(chave):
     try:
