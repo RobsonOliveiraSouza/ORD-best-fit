@@ -223,14 +223,15 @@ def insere(registro):
             #tuple[bool, int, int, int] 
             (existe_espaco_disponivel_led, tamanho_espaco_disponivel, offsets) = procurar_espaco_disponivel_led(cabeca_led, tamanho_registro, arq)
             if existe_espaco_disponivel_led:
-                print(f'Espaço disponível encontrado! {tamanho_espaco_disponivel}')
-                print(f'Fragmentacao: {tamanho_espaco_disponivel - tamanho_registro}')
+                print(f'Espaço disponível encontrado! {tamanho_espaco_disponivel} bytes')
+                print(f'Fragmentacao: {tamanho_espaco_disponivel - tamanho_registro} bytes')
                 inserir_em_espaco_led(registro, tamanho_espaco_disponivel, offsets, arq)
                 # Fragmentação 
                 return
             print(f'Não foi encontrado espaço disponível na led...')
             # Assumindo que o ponteiro do arquivo esteja no fim do arquivo:
             inserir_registro(tamanho_registro, registro, arq)
+            print(f'Registro {id_registro} inserido no final do arquivo com {tamanho_registro} bytes. \n')
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
 

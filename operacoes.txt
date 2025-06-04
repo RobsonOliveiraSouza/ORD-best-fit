@@ -18,3 +18,5 @@ b 29
 b 7
 i 44|Como Treinar o Seu Dragão|Dean DeBlois, Chris Sanders|2010|Animação, Aventura, Família|98|Jay Baruchel, Gerard Butler, Craig Ferguson|
 i 126|Corações de Ferro|David Ayer|2014|Ação, Drama, Guerra|134|Brad Pitt, Shia LaBeouf, Logan Lerman|
+b 44
+b 126
