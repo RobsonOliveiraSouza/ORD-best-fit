@@ -27,13 +27,13 @@ def adicionar_novo_registro_deletado_led(led, arq, tamanho_novo_registro, offset
 
     CABECA_LED = -1
     offset_anterior = CABECA_LED
-    prox_offset = ler_cabecalho_led(arq) 
+    prox_offset = led
 
     while prox_offset != CABECA_LED:
         arq.seek(prox_offset)
         offset_anterior = prox_offset
         bytes_tamanho_registro_atual_led = arq.read(2)
-        arq.seek(1) # pula o asterisco
+        arq.read(1) # pula o asterisco
         bytes_prox_offset = arq.read(4)
 
         prox_offset = int.from_bytes(bytes_prox_offset, byteorder='big', signed=True) 
@@ -80,6 +80,19 @@ def procurar_espaco_disponivel_led(cabeca_led: int, tamanho_registro: int, arq) 
     arq.seek(0, io.SEEK_END) # Caso não encontre espaço disponível, adicionar registro no fim do arquivo 
     return False, -1, (offset_anterior, offset_atual)
 
+def percorrer_led(cabeca_led: int, arq):
+    CABECA_LED = -1
+    offset_anterior = -1
+    prox_offset = cabeca_led
+
+    while prox_offset != CABECA_LED:
+        arq.seek(prox_offset)
+        (tamanho_celula_led, pivot_prox_offset) = ler_informacoes_registro_led(arq, prox_offset)
+        print(f'[offset: {offset_anterior}, tam: {tamanho_celula_led}] -> ', end='')
+        offset_anterior = prox_offset
+        prox_offset = pivot_prox_offset
+    print(f'CABEÇA LED')
+
 
 """
     OPERAÇÕES REGISTRO
@@ -107,28 +120,95 @@ def leia_reg(arq) -> tuple[str, int]:
 def busca(chave, imprimir=True) -> int:
     try:
         with open("filmes.dat", 'rb') as arq:
-            arq.read(4)
-            achou = False
-            buffer, tam = leia_reg(arq)
-            offset = 4
-            if imprimir:
-                print(f'Busca pelo registro de "{chave}"')
-            while buffer and not achou:
-                key = buffer.split('|')[0]
-                if chave == key:
-                    achou = True
-                    if imprimir:
-                        print(f"{buffer} ({tam} bytes)\n")
-                else:
-                    offset += tam + 2
-                    buffer, tam = leia_reg(arq)
-            if not achou:
-                if imprimir:
-                    print(f'Jogo com identificador {chave} não encontrado.\n')
-                return -1
-            return offset
+            arq.seek(io.SEEK_END,0)
+            fim_arquivo = arq.tell()
+            arq.seek(0) 
+            arq.read(4) # Pula cabeçalho da LED
+            bytes_tamanho_registro = arq.read(2)
+            tamanho_registro = int.from_bytes(bytes_tamanho_registro, byteorder='big', signed=False)
+            proximo_registro = arq.tell() + tamanho_registro
+
+            while proximo_registro != fim_arquivo:
+                registro = arq.read()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # arq.read(4)  # Pula o cabeçalho da LED
+            # offset = 4
+            # achou = False
+
+            # while True:
+            #     pos_inicial = offset
+
+            #     tam_bytes = arq.read(2)
+            #     if len(tam_bytes) < 2:
+            #         break  # fim do arquivo
+
+            #     tam = int.from_bytes(tam_bytes, byteorder='big')
+
+            #     marcador = arq.read(1)
+            #     if not marcador:
+            #         break  # fim do arquivo
+
+            #     if marcador == b'*':
+            #         # Registro removido: pular o conteúdo e continuar
+            #         arq.seek(tam - 1, io.SEEK_CUR)
+            #         offset += tam + 2
+            #         continue
+
+            #     # Registro válido
+            #     conteudo = arq.read(tam - 1)  # -1 porque já lemos o marcador
+            #     buffer = conteudo.decode('utf-8', errors='replace')
+            #     id_registro = buffer.split('|')[0]
+
+            #     if id_registro == chave:
+            #         achou = True
+            #         if imprimir:
+            #             print(f"Busca pelo registro de \"{chave}\"")
+            #             print(f"{buffer} ({tam} bytes)\n")
+            #         return pos_inicial  # Offset do início do registro
+
+            #     offset += tam + 2  # Tamanho do registro + 2 bytes do tamanho
+            # if not achou and imprimir:
+            #     print(f'Jogo com identificador {chave} não encontrado.\n')
+            # return -1
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
+        return -1
+
+
+def imprimir_led():
+    try:
+        with open("filmes.dat", 'r+b') as arq:
+            CABECA_LED = -1
+            cabeca_led = ler_cabecalho_led(arq)
+            if cabeca_led == CABECA_LED: # LED vazia
+                print(f'A LED está vazia.') 
+                return
+            percorrer_led(cabeca_led, arq)
+
+    except IOError as e:
+        print(f"Erro ao abrir o arquivo: {e}")
+
 
 def imprimeLED(imprimir=True):
     try:
@@ -260,7 +340,7 @@ if __name__ == "__main__":
         nomeArq = sys.argv[2]
         arquivo(nomeArq)
     elif len(sys.argv) == 2 and sys.argv[1] == '-p':
-        imprimeLED(imprimir=True)
+        imprimir_led()
     else:
         print("Uso: python programa.py -e operacoes.txt")
         print("Ou: python programa.py -p")
