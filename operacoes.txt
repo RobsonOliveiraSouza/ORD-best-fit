@@ -4,5 +4,3 @@ r 153
 r 230
 i 11|O Exorcista|William Friedkin|1973|Terror, Drama|122|Ellen Burstyn, Max von Sydow, Linda Blair|
 i 150|O Tigre e o Dragão|Ang Lee|2000|Ação, Aventura, Fantasia|120|Chow Yun|
-r 144 
-r 123

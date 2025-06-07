@@ -7,8 +7,24 @@ IMPRIME_LED = True
     UTILITARIOS
 """
 def log_registro_removido(tam_registro: int, offset_registro: int):
-    print(f'''Registro removido! ({tam_registro} bytes)
-            Local: offset = {offset_registro} bytes ({tam_registro.to_bytes(2, byteorder='little')})''')
+    print(f'Registro removido! ({tam_registro} bytes)')
+    print(f'Local: offset = {offset_registro} ({hex(offset_registro)})')
+    print('')
+
+def log_insercao(id_registro: int, tam_registro: int, offset: int = 0, fragmentacao: int = 0):
+    print(f'Inserção do registro de chave "{id_registro}" ({tam_registro} bytes)')
+    if fragmentacao == 0:
+       print('Local: Fim do arquivo') 
+    else:
+     print(f'Espaço reutilizado: {fragmentacao} bytes')
+     print(f'Local: offset = {offset} bytes ({hex(offset)})')
+    print('')
+    
+
+def log_busca(registro: str):
+    print(f'{registro} ({len(registro)} bytes)')
+    print('')
+
 
 """
     OPERAÇÕES LED
@@ -62,7 +78,7 @@ def adicionar_novo_elemento_led(arq, offset_anterior, aponta_para):
 
 def ler_informacoes_registro_led(arq, offset_atual) -> tuple[int, int]:
     arq.seek(offset_atual)
-    atualEspacoTam = int.from_bytes(arq.read(2), byteorder='big')
+    atualEspacoTam = int.from_bytes(arq.read(2), byteorder='big', signed=False)
     arq.read(1) #pula o "*"
     proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
     return atualEspacoTam, proxOffset
@@ -104,93 +120,25 @@ def inserir_registro(tamanho_registro: int, registro: str, arq) -> None:
 """
     OPERAÇÕES ARQUIVO
 """
-def leia_reg(arq) -> tuple[str, int]:
-    try:
-        tam_bytes = arq.read(2)
-        if len(tam_bytes) < 2:
-            return '', 0
-        tam = int.from_bytes(tam_bytes, byteorder='big')
-        if tam > 0:
-            buffer = arq.read(tam)
-            return buffer.decode('utf-8', errors='replace'), tam
-    except OSError as e:
-        print(f'Erro leia_reg: {e}')
-    return '', 0
-
 def busca(chave, imprimir=True) -> int:
     try:
         with open("filmes.dat", 'rb') as arq:
-            arq.seek(io.SEEK_END,0)
-            fim_arquivo = arq.tell()
-            arq.seek(0) 
-            arq.read(4) # Pula cabeçalho da LED
-            bytes_tamanho_registro = arq.read(2)
-            tamanho_registro = int.from_bytes(bytes_tamanho_registro, byteorder='big', signed=False)
-            proximo_registro = arq.tell() + tamanho_registro
-
-            while proximo_registro != fim_arquivo:
-                registro = arq.read()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            # arq.read(4)  # Pula o cabeçalho da LED
-            # offset = 4
-            # achou = False
-
-            # while True:
-            #     pos_inicial = offset
-
-            #     tam_bytes = arq.read(2)
-            #     if len(tam_bytes) < 2:
-            #         break  # fim do arquivo
-
-            #     tam = int.from_bytes(tam_bytes, byteorder='big')
-
-            #     marcador = arq.read(1)
-            #     if not marcador:
-            #         break  # fim do arquivo
-
-            #     if marcador == b'*':
-            #         # Registro removido: pular o conteúdo e continuar
-            #         arq.seek(tam - 1, io.SEEK_CUR)
-            #         offset += tam + 2
-            #         continue
-
-            #     # Registro válido
-            #     conteudo = arq.read(tam - 1)  # -1 porque já lemos o marcador
-            #     buffer = conteudo.decode('utf-8', errors='replace')
-            #     id_registro = buffer.split('|')[0]
-
-            #     if id_registro == chave:
-            #         achou = True
-            #         if imprimir:
-            #             print(f"Busca pelo registro de \"{chave}\"")
-            #             print(f"{buffer} ({tam} bytes)\n")
-            #         return pos_inicial  # Offset do início do registro
-
-            #     offset += tam + 2  # Tamanho do registro + 2 bytes do tamanho
-            # if not achou and imprimir:
-            #     print(f'Jogo com identificador {chave} não encontrado.\n')
-            # return -1
+            arq.read(4)
+            bytes_tamanho_registro_atual = arq.read(2)  
+            tamanho_registro_atual = int.from_bytes(bytes_tamanho_registro_atual, byteorder='big', signed=False)
+            buffer = arq.read(tamanho_registro_atual)
+            while buffer:
+                registro = buffer.decode('utf-8', errors='replace')
+                if '*' not in registro:
+                    chave_registro = registro.split('|')[0]
+                    if chave_registro == chave:
+                        if imprimir:
+                            log_busca(registro)
+                        return arq.tell() - (tamanho_registro_atual + 2)
+                bytes_tamanho_registro_atual = arq.read(2)           
+                tamanho_registro_atual = int.from_bytes(bytes_tamanho_registro_atual, byteorder='big', signed=False)
+                buffer = arq.read(tamanho_registro_atual)
+            return -1
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
         return -1
@@ -209,69 +157,33 @@ def imprimir_led():
     except IOError as e:
         print(f"Erro ao abrir o arquivo: {e}")
 
-
-def imprimeLED(imprimir=True):
-    try:
-        with open("filmes.dat", 'r+b') as arq:
-            arq.seek(0)
-            ledCabecalho = arq.read(4)
-            led = int.from_bytes(ledCabecalho, byteorder='big', signed=True)
-            if led == -1:
-                if imprimir:
-                    print("\nLED está vazia.\n")
-                return
-            cont = 0
-            print("\nLED -> ", end='')
-            while led != -1:
-                arq.seek(led)
-                espaco = int.from_bytes(arq.read(2), byteorder='big')
-                arq.read(1)
-                proxOffset = int.from_bytes(arq.read(4), byteorder='big', signed=True)
-                if imprimir:
-                    print(f"[offset: {led}, tam: {espaco}] -> ", end='')
-                led = proxOffset
-                cont += 1
-            if imprimir:
-                print("[offset: -1]")
-                print(f"Total: {cont} espaços disponíveis\n")
-    except IOError as e:
-        print(f"Erro ao abrir o arquivo: {e}")
-
 def insere(registro):
     try:
         with open("filmes.dat", 'r+b') as arq:
-            id_registro = registro.split('|')[0]
             cabeca_led = ler_cabecalho_led(arq)
             tamanho_registro = len(registro)
-            print(f'Inserindo registro {id_registro} ({tamanho_registro} bytes)')
-            #tuple[bool, int, int, int] 
             (existe_espaco_disponivel_led, tamanho_espaco_disponivel, offsets) = procurar_espaco_disponivel_led(cabeca_led, tamanho_registro, arq)
             if existe_espaco_disponivel_led:
-                print(f'Espaço disponível encontrado! {tamanho_espaco_disponivel} bytes')
-                print(f'Fragmentacao: {tamanho_espaco_disponivel - tamanho_registro} bytes')
-                inserir_em_espaco_led(registro, tamanho_espaco_disponivel, offsets, arq)
                 # Fragmentação 
+                inserir_em_espaco_led(registro, tamanho_espaco_disponivel, offsets, arq)
                 return
-            print(f'Não foi encontrado espaço disponível na led...')
             # Assumindo que o ponteiro do arquivo esteja no fim do arquivo:
             inserir_registro(tamanho_registro, registro, arq)
-            print(f'Registro {id_registro} inserido no final do arquivo com {tamanho_registro} bytes. \n')
+            log_insercao(registro.split('|')[0], tamanho_registro)
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
 
 def inserir_em_espaco_led(registro: str, tamanho_espaco_disponivel:int, offsets: tuple[int, int], arq) -> None:
     tamanho_registro_sem_padding = len(registro)
     fragmentacao = tamanho_espaco_disponivel - tamanho_registro_sem_padding
-    mensagem_fragmentacao = ''
+    offset_insercao_registro = arq.tell()
     if fragmentacao != 0:
-        mensagem_fragmentacao = f' (+ {fragmentacao} bytes p/ evitar fragmentação)'
-        print(f'Fragmentacao encontrada: {fragmentacao} bytes')
         registro.rjust(tamanho_espaco_disponivel, '\0')
     inserir_registro(len(registro), registro, arq)
     (offset_anterior, prox_offset) = offsets
     arq.seek(offset_anterior + 3) # 2 numeros do tamanho_registro + '*'
     arq.write(prox_offset.to_bytes(4, byteorder='big', signed=True))
-    print(f'Registro inserido! {str(tamanho_registro_sem_padding)+mensagem_fragmentacao}')
+    log_insercao(registro.split('|')[0], tamanho_registro_sem_padding, offset_insercao_registro, fragmentacao)
 
 def remove(chave):
     try:
@@ -283,7 +195,6 @@ def remove(chave):
             return
         with open("filmes.dat", 'r+b') as arq:
             led = ler_cabecalho_led(arq)
-            print(f'Valor cabeçalho led: {led}')
 
             arq.seek(offset)
             tamanho_registro_as_bytes = arq.read(2)
