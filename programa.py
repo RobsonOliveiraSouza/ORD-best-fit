@@ -22,6 +22,8 @@ def log_insercao(id_registro: int, tam_registro: int, offset: int = 0, fragmenta
     
 
 def log_busca(registro: str):
+    id_registro = registro.split('|')[0]
+    print(f'Busca pelo registro de chave "{id_registro}"')
     print(f'{registro} ({len(registro)} bytes)')
     print('')
 
@@ -39,7 +41,7 @@ def escrever_cabecalho_led(arq, offset_novo_registro):
     arq.seek(0)
     arq.write(offset_novo_registro.to_bytes(4, byteorder='big', signed=True))
 
-def adicionar_novo_registro_deletado_led(led, arq, tamanho_novo_registro, offset_novo_registro):
+def remontar_led(led, arq, tamanho_novo_registro, offset_novo_registro):
 
     CABECA_LED = -1
     offset_anterior = CABECA_LED
@@ -114,7 +116,7 @@ def percorrer_led(cabeca_led: int, arq):
     OPERAÇÕES REGISTRO
 """
 def inserir_registro(tamanho_registro: int, registro: str, arq) -> None:
-    arq.write(tamanho_registro.to_bytes(2, byteorder='big', signed=False))
+    arq.write(len(registro).to_bytes(2, byteorder='big', signed=False))
     arq.write(registro.encode('utf-8'))
 
 """
@@ -178,10 +180,13 @@ def inserir_em_espaco_led(registro: str, tamanho_espaco_disponivel:int, offsets:
     fragmentacao = tamanho_espaco_disponivel - tamanho_registro_sem_padding
     offset_insercao_registro = arq.tell()
     if fragmentacao != 0:
-        registro.rjust(tamanho_espaco_disponivel, '\0')
+        registro = registro.ljust(tamanho_espaco_disponivel, '\0')
     inserir_registro(len(registro), registro, arq)
     (offset_anterior, prox_offset) = offsets
-    arq.seek(offset_anterior + 3) # 2 numeros do tamanho_registro + '*'
+    offset_anterior = 0 if offset_anterior == -1 else offset_anterior # Normalizando o offset anterior, caso ele venha -1
+    arq.seek(offset_anterior)
+    if offset_anterior != 0: 
+        arq.read(3) # 2 numeros do tamanho_registro + '*'
     arq.write(prox_offset.to_bytes(4, byteorder='big', signed=True))
     log_insercao(registro.split('|')[0], tamanho_registro_sem_padding, offset_insercao_registro, fragmentacao)
 
@@ -214,7 +219,7 @@ def remove(chave):
                 return
 
             # Vai ter que adicionar o novo registro na led
-            adicionar_novo_registro_deletado_led(led, arq, tamanho_novo_registro_deletado, offset_novo_registro_deletado)
+            remontar_led(led, arq, tamanho_novo_registro_deletado, offset_novo_registro_deletado)
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
 
