@@ -42,7 +42,6 @@ def escrever_cabecalho_led(arq, offset_novo_registro):
     arq.write(offset_novo_registro.to_bytes(4, byteorder='big', signed=True))
 
 def remontar_led(led, arq, tamanho_novo_registro, offset_novo_registro):
-
     CABECA_LED = -1
     offset_anterior = CABECA_LED
     prox_offset = led
@@ -86,17 +85,24 @@ def ler_informacoes_registro_led(arq, offset_atual) -> tuple[int, int]:
     return atualEspacoTam, proxOffset
 
 def procurar_espaco_disponivel_led(cabeca_led: int, tamanho_registro: int, arq) -> tuple[bool, int, tuple[int, int]]: # Retorna o offset anterior, se o registro foi encontrado e o tamanho da celula
-    offset_anterior = -1
-    (offset_atual, prox_offset) = cabeca_led, -1 
-    while offset_atual != -1:
-        arq.seek(offset_atual)
-        (tamanho_celula_led, prox_offset) = ler_informacoes_registro_led(arq, offset_atual)
-        if tamanho_celula_led >= tamanho_registro:
-            return True, tamanho_celula_led, (offset_anterior, offset_atual)
-        offset_anterior = offset_atual
-        offset_atual = prox_offset
-    arq.seek(0, io.SEEK_END) # Caso não encontre espaço disponível, adicionar registro no fim do arquivo 
-    return False, -1, (offset_anterior, offset_atual)
+    (offset_anterior, prox_offset) = 0, cabeca_led
+
+    while prox_offset != -1:
+        arq.seek(prox_offset)
+        bytes_espaco_disponivel_celula_led = arq.read(2)
+        espaco_disponivel_celula_led = int.from_bytes(bytes_espaco_disponivel_celula_led, byteorder='big', signed=False)
+
+        if espaco_disponivel_celula_led >= tamanho_registro:
+            return (True, espaco_disponivel_celula_led, (offset_anterior, prox_offset))
+
+        offset_anterior = prox_offset
+        arq.read(1) # pula o '*'
+        bytes_prox_offset = arq.read(4)
+        prox_offset = int.from_bytes(bytes_prox_offset, byteorder='big', signed=True)
+
+
+    return False, -1, (offset_anterior, prox_offset)
+
 
 def percorrer_led(cabeca_led: int, arq):
     CABECA_LED = -1
@@ -115,7 +121,7 @@ def percorrer_led(cabeca_led: int, arq):
 """
     OPERAÇÕES REGISTRO
 """
-def inserir_registro(tamanho_registro: int, registro: str, arq) -> None:
+def inserir_registro(registro: str, arq) -> None:
     arq.write(len(registro).to_bytes(2, byteorder='big', signed=False))
     arq.write(registro.encode('utf-8'))
 
@@ -169,8 +175,9 @@ def insere(registro):
                 # Fragmentação 
                 inserir_em_espaco_led(registro, tamanho_espaco_disponivel, offsets, arq)
                 return
-            # Assumindo que o ponteiro do arquivo esteja no fim do arquivo:
-            inserir_registro(tamanho_registro, registro, arq)
+            arq.seek(0, io.SEEK_END)
+            arq.write(len(registro).to_bytes(2, byteorder='big', signed=False))
+            arq.write(registro.encode('utf-8', errors='replace'))
             log_insercao(registro.split('|')[0], tamanho_registro)
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
@@ -178,17 +185,25 @@ def insere(registro):
 def inserir_em_espaco_led(registro: str, tamanho_espaco_disponivel:int, offsets: tuple[int, int], arq) -> None:
     tamanho_registro_sem_padding = len(registro)
     fragmentacao = tamanho_espaco_disponivel - tamanho_registro_sem_padding
-    offset_insercao_registro = arq.tell()
     if fragmentacao != 0:
-        registro = registro.ljust(tamanho_espaco_disponivel, '\0')
-    inserir_registro(len(registro), registro, arq)
-    (offset_anterior, prox_offset) = offsets
-    offset_anterior = 0 if offset_anterior == -1 else offset_anterior # Normalizando o offset anterior, caso ele venha -1
+        registro = registro[:-1] # Removendo ultimo '|'
+        registro = registro.ljust(tamanho_espaco_disponivel - 1, '\0') # Colocando preenchimento
+        registro += '|'
+
+    (offset_anterior, offset_atual) = offsets
+    arq.seek(offset_atual)
+    arq.read(3) # 2 Bytes tam. reg. + '*'
+    bytes_prox_offset = arq.read(4)
+    prox_offset = int.from_bytes(bytes_prox_offset, byteorder='big', signed=True)
+    prox_offset = 0 if prox_offset == -1 else prox_offset # Normalizando o próximo offset, caso ele seja a Cabeça da LED (-1)
     arq.seek(offset_anterior)
     if offset_anterior != 0: 
         arq.read(3) # 2 numeros do tamanho_registro + '*'
     arq.write(prox_offset.to_bytes(4, byteorder='big', signed=True))
-    log_insercao(registro.split('|')[0], tamanho_registro_sem_padding, offset_insercao_registro, fragmentacao)
+    arq.seek(offset_atual)
+    arq.write(len(registro).to_bytes(2, byteorder='big', signed=False))
+    arq.write(registro.encode('utf-8', errors='replace'))
+    log_insercao(registro.split('|')[0], tamanho_registro_sem_padding, offset_atual, fragmentacao)
 
 def remove(chave):
     try:
@@ -222,6 +237,29 @@ def remove(chave):
             remontar_led(led, arq, tamanho_novo_registro_deletado, offset_novo_registro_deletado)
     except OSError as e:
         print(f"Erro ao abrir 'filmes.dat': {e}")
+
+
+def compactar_arquivo():
+    print(f'Iniciando compactação do arquivo filmes.dat...')
+    try:
+        with open("filmes.dat", 'r+b') as arq:
+            with open("filmes_compactado.dat", 'w+b') as arq_compactado:
+                arq.read(4)
+                arq_compactado.write(int(0).to_bytes(4, byteorder='big', signed=True))
+                bytes_tamanho_registro_atual = arq.read(2)  
+                tamanho_registro_atual = int.from_bytes(bytes_tamanho_registro_atual, byteorder='big', signed=False)
+                buffer = arq.read(tamanho_registro_atual)
+                while buffer:
+                    registro = buffer.decode('utf-8', errors='replace')
+                    if '*' not in registro:
+                        arq_compactado.write(tamanho_registro_atual.to_bytes(2, byteorder='big', signed=False))
+                        arq_compactado.write(registro.encode(encoding='utf-8', errors='replace'))
+                    bytes_tamanho_registro_atual = arq.read(2)           
+                    tamanho_registro_atual = int.from_bytes(bytes_tamanho_registro_atual, byteorder='big', signed=False)
+                    buffer = arq.read(tamanho_registro_atual)
+                print(f'Compactação finalizada! O arquivo compactado se chama "filmes_compactado.dat"')
+    except OSError as e:
+        print(f'Erro ao abrir "filmes.dat": {e}')
 
 def arquivo(nomeArq):
     try:
@@ -257,6 +295,8 @@ if __name__ == "__main__":
         arquivo(nomeArq)
     elif len(sys.argv) == 2 and sys.argv[1] == '-p':
         imprimir_led()
+    elif len(sys.argv) == 2 and sys.argv[1] == '-c':
+        compactar_arquivo()
     else:
         print("Uso: python programa.py -e operacoes.txt")
         print("Ou: python programa.py -p")
