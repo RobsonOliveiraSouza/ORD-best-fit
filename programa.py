@@ -103,20 +103,19 @@ def procurar_espaco_disponivel_led(cabeca_led: int, tamanho_registro: int, arq) 
 
     return False, -1, (offset_anterior, prox_offset)
 
-
 def percorrer_led(cabeca_led: int, arq):
     CABECA_LED = -1
-    offset_anterior = -1
     prox_offset = cabeca_led
-
+    print('LED -> ', end='')
     while prox_offset != CABECA_LED:
         arq.seek(prox_offset)
-        (tamanho_celula_led, pivot_prox_offset) = ler_informacoes_registro_led(arq, prox_offset)
-        print(f'[offset: {offset_anterior}, tam: {tamanho_celula_led}] -> ', end='')
-        offset_anterior = prox_offset
-        prox_offset = pivot_prox_offset
+        bytes_tam_celula_led = arq.read(2)
+        arq.read(1) # Pula '*'
+        bytes_prox_offset = arq.read(4)
+        tamanho_celula_led = int.from_bytes(bytes_tam_celula_led, byteorder='big', signed=False)
+        prox_offset = int.from_bytes(bytes_prox_offset, byteorder='big', signed=True)
+        print(f'[offset: {prox_offset}, tam: {tamanho_celula_led}] -> ', end='')
     print(f'CABEÇA LED')
-
 
 """
     OPERAÇÕES REGISTRO
